@@ -1,9 +1,10 @@
 {
-    "name": "mediasoup-spacebar-wrtc",
-    "version": "1.0.2",
-    "description": "a spacebar-compatible werbtc server that uses mediasoup",
+    "name": "@spacebarchat/mediasoup-webrtc",
+    "version": "1.0.0",
+    "description": "A WebRTC server implementation compatible with Spacebar using the Mediasoup media server library",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "type": "module",
     "files": [
         "dist",
         "src"
@@ -12,21 +13,28 @@
         "access": "public"
     },
     "scripts": {
-        "build": "tsc",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "build": "tsc"
     },
     "dependencies": {
-        "mediasoup": "github:dank074/mediasoup-fork#sc-dev",
+        "mediasoup": "^3.18.0",
         "semantic-sdp": "^3.31.1"
     },
     "devDependencies": {
+        "@spacebarchat/spacebar-webrtc-types": "^1.0.1",
         "@types/node": "^20.17.1",
-        "spacebar-webrtc-types": "github:dank074/spacebar-webrtc-types",
         "typescript": "^5.6.3"
     },
     "peerDependencies": {
-        "spacebar-webrtc-types": "github:dank074/spacebar-webrtc-types"
+        "@spacebarchat/spacebar-webrtc-types": "^1.0.1"
     },
-    "author": "",
-    "license": "ISC"
+    "repository": {
+        "type": "git",
+        "url": "git+ssh://git@github.com:m33ts4k0z/mediasoup-webrtc.git"
+    },
+    "author": "Spacebar",
+    "license": "AGPL-3.0-only",
+    "bugs": {
+        "url": "https://github.com/m33ts4k0z/mediasoup-webrtc/issues"
+    },
+    "homepage": "https://spacebar.chat"
 }

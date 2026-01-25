@@ -1,15 +1,16 @@
 import * as mediasoup from "mediasoup";
-import { types as MediaSoupTypes } from "mediasoup";
-import { AppData, Router, RtpHeaderExtension } from "mediasoup/node/lib/types";
-import {
+import type { types as MediaSoupTypes } from "mediasoup";
+import type {
     Codec,
     RtpHeader,
     SignalingDelegate,
     WebRtcClient,
-} from "spacebar-webrtc-types";
-import { VoiceRoom } from "./VoiceRoom";
-import { MediasoupWebRtcClient } from "./MediasoupWebRtcClient";
+} from "@spacebarchat/spacebar-webrtc-types";
+import { VoiceRoom } from "./VoiceRoom.js";
+import { MediasoupWebRtcClient } from "./MediasoupWebRtcClient.js";
 import { SDPInfo } from "semantic-sdp";
+
+type AppData = MediaSoupTypes.AppData;
 
 export interface RouterType {
     router: MediaSoupTypes.Router;
@@ -245,6 +246,8 @@ export class MediasoupSignalingDelegate implements SignalingDelegate {
     }
 }
 
+// Note: RTX is handled automatically by mediasoup when producing/consuming video
+// Do NOT include video/rtx in mediaCodecs - it causes "media codec not supported" error
 export const MEDIA_CODECS: MediaSoupTypes.RtpCodecCapability[] = [
     {
         kind: "audio",
@@ -279,11 +282,4 @@ export const MEDIA_CODECS: MediaSoupTypes.RtpCodecCapability[] = [
         ],
         preferredPayloadType: 102,
     },
-    /*
-    {
-        kind: "video",
-        mimeType: "video/VP8",
-        clockRate: 90000,
-        preferredPayloadType: 101,
-      }, */
 ];

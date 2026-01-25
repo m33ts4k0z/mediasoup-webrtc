@@ -1,12 +1,14 @@
-import { RtpCodecCapability, Transport } from "mediasoup/node/lib/types";
+import type { types as MediasoupTypes } from "mediasoup";
 import {
     MEDIA_CODECS,
     MediasoupSignalingDelegate,
     RouterType,
-} from "./MediasoupSignalingDelegate";
-import { MediasoupWebRtcClient } from "./MediasoupWebRtcClient";
-import { Codec, RtpHeader } from "spacebar-webrtc-types";
-import { RtpHeaderExtensionUri } from "mediasoup/node/lib/fbs/rtp-parameters";
+} from "./MediasoupSignalingDelegate.js";
+import { MediasoupWebRtcClient } from "./MediasoupWebRtcClient.js";
+import type { Codec, RtpHeader } from "@spacebarchat/spacebar-webrtc-types";
+
+type RtpCodecCapability = MediasoupTypes.RtpCodecCapability;
+type Transport = MediasoupTypes.Transport;
 
 export class VoiceRoom {
     private _clients: Map<string, MediasoupWebRtcClient>;
@@ -57,13 +59,36 @@ export class VoiceRoom {
                 "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay",
             ].includes(header.uri)
         );
-        const supportedCodecs: RtpCodecCapability[] = MEDIA_CODECS.map(codec => {
-            const codecName = codec.mimeType.split("/")[1];
-            console.log(codecName);
-            const alternativePayloadType = codecName === "opus" ? 111 : 102;
-            return { ...codec, preferredPayloadType: codecs.find(c => c.name.toUpperCase() === codecName.toUpperCase())?.payload_type ?? alternativePayloadType}
-        })
 
+        // Map MEDIA_CODECS to client's codec capabilities with proper payload types
+        // Note: RTX is handled automatically by mediasoup, not as a separate codec
+        const supportedCodecs: RtpCodecCapability[] = MEDIA_CODECS.map((codec) => {
+            const codecName = codec.mimeType.split("/")[1];
+
+            // Find matching client codec
+            const clientCodec = codecs.find(
+                (c) => c.name.toUpperCase() === codecName.toUpperCase()
+            );
+
+            let alternativePayloadType: number;
+            switch (codecName.toLowerCase()) {
+                case "opus":
+                    alternativePayloadType = 111;
+                    break;
+                case "h264":
+                    alternativePayloadType = 102;
+                    break;
+                default:
+                    alternativePayloadType = 96;
+            }
+
+            return {
+                ...codec,
+                preferredPayloadType: clientCodec?.payload_type ?? alternativePayloadType,
+            };
+        });
+
+        console.log("[VoiceRoom] Configured codecs:", supportedCodecs.map((c) => c.mimeType));
         client.codecCapabilities = supportedCodecs;
     };
 
