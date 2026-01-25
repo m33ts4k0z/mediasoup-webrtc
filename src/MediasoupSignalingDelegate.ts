@@ -136,7 +136,7 @@ export class MediasoupSignalingDelegate implements SignalingDelegate {
             initialAvailableOutgoingBitrate: 2500000,
         });
 
-        room?.onClientOffer(client, transport, codecs, rtpHeaders);
+        room?.onClientOffer(client as MediasoupWebRtcClient, transport, codecs, rtpHeaders);
 
         const remoteDTLS = offer.getDTLS().plain();
 
@@ -182,7 +182,7 @@ export class MediasoupSignalingDelegate implements SignalingDelegate {
     }
 
     onClientClose<T>(client: WebRtcClient<T>): void {
-        this._rooms.get(client.voiceRoomId)?.onClientLeave(client);
+        this._rooms.get(client.voiceRoomId)?.onClientLeave(client as MediasoupWebRtcClient);
     }
 
     updateSDP(offer: string): void {

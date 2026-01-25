@@ -37,6 +37,11 @@ export class MediasoupWebRtcClient implements WebRtcClient<any> {
     public consumers?: Consumer[];
     public incomingSSRCS?: SSRCs;
 
+    /** Guards against concurrent publishTrack("audio") producing the same SSRC. */
+    private audioPublishInProgress: Promise<void> | null = null;
+    /** Guards against concurrent publishTrack("video") producing the same SSRC. */
+    private videoPublishInProgress: Promise<void> | null = null;
+
     constructor(
         userId: string,
         roomId: string,
@@ -111,121 +116,136 @@ export class MediasoupWebRtcClient implements WebRtcClient<any> {
         if (!this.webrtcConnected || !this.transport) return;
 
         if (type === "audio" && !this.isProducingAudio()) {
-            const audioCodec = this.codecCapabilities?.find((codec) => codec.kind === "audio");
+            if (this.audioPublishInProgress) {
+                await this.audioPublishInProgress;
+                if (this.isProducingAudio()) return;
+            }
+            const doPublish = async () => {
+                const audioCodec = this.codecCapabilities?.find((codec) => codec.kind === "audio");
 
-            this.audioProducer = await this.transport.produce({
-                kind: "audio",
-                rtpParameters: {
-                    codecs: audioCodec
-                        ? [
-                              {
-                                  mimeType: audioCodec.mimeType,
-                                  clockRate: audioCodec.clockRate,
-                                  channels: audioCodec.channels,
-                                  rtcpFeedback: audioCodec.rtcpFeedback,
-                                  parameters: audioCodec.parameters ?? {},
-                                  payloadType: audioCodec.preferredPayloadType ?? 111,
-                              },
-                          ]
-                        : [],
-                    encodings: [
-                        {
-                            ssrc: ssrc.audio_ssrc,
-                            maxBitrate: 64000,
-                            codecPayloadType: audioCodec?.preferredPayloadType ?? 111,
-                        },
-                    ],
-                    headerExtensions: this.headerExtensions
-                        ?.filter(
-                            (header) =>
-                                header.uri === "urn:ietf:params:rtp-hdrext:ssrc-audio-level" ||
-                                header.uri === "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
-                        )
-                        .map((header) => {
-                            return {
-                                id: header.id,
-                                uri: header.uri as RtpHeaderExtensionUri,
-                            };
-                        }),
-                },
-                paused: false,
-            });
+                this.audioProducer = await this.transport!.produce({
+                    kind: "audio",
+                    rtpParameters: {
+                        codecs: audioCodec
+                            ? [
+                                  {
+                                      mimeType: audioCodec.mimeType,
+                                      clockRate: audioCodec.clockRate,
+                                      channels: audioCodec.channels,
+                                      rtcpFeedback: audioCodec.rtcpFeedback,
+                                      parameters: audioCodec.parameters ?? {},
+                                      payloadType: audioCodec.preferredPayloadType ?? 111,
+                                  },
+                              ]
+                            : [],
+                        encodings: [
+                            {
+                                ssrc: ssrc.audio_ssrc,
+                                maxBitrate: 64000,
+                                codecPayloadType: audioCodec?.preferredPayloadType ?? 111,
+                            },
+                        ],
+                        headerExtensions: this.headerExtensions
+                            ?.filter(
+                                (header) =>
+                                    header.uri === "urn:ietf:params:rtp-hdrext:ssrc-audio-level" ||
+                                    header.uri === "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
+                            )
+                            .map((header) => {
+                                return {
+                                    id: header.id,
+                                    uri: header.uri as RtpHeaderExtensionUri,
+                                };
+                            }),
+                    },
+                    paused: false,
+                });
 
-            // Store audio SSRC
-            this.incomingSSRCS = {
-                ...this.incomingSSRCS,
-                audio_ssrc: ssrc.audio_ssrc,
+                this.incomingSSRCS = {
+                    ...this.incomingSSRCS,
+                    audio_ssrc: ssrc.audio_ssrc,
+                };
             };
+            this.audioPublishInProgress = doPublish().finally(() => {
+                this.audioPublishInProgress = null;
+            });
+            await this.audioPublishInProgress;
         }
 
         if (type === "video" && !this.isProducingVideo()) {
-            // Get the main video codec (H264) and RTX codec
-            const videoCodecs = this.codecCapabilities?.filter((codec) => codec.kind === "video") ?? [];
-            const mainVideoCodec = videoCodecs.find((codec) => !codec.mimeType.toLowerCase().includes("rtx"));
-            const rtxCodec = videoCodecs.find((codec) => codec.mimeType.toLowerCase().includes("rtx"));
-
-            const codecs: RtpCodecParameters[] = [];
-
-            // Add main video codec (H264)
-            if (mainVideoCodec) {
-                codecs.push({
-                    mimeType: mainVideoCodec.mimeType,
-                    clockRate: mainVideoCodec.clockRate,
-                    channels: mainVideoCodec.channels,
-                    rtcpFeedback: mainVideoCodec.rtcpFeedback,
-                    parameters: mainVideoCodec.parameters ?? {},
-                    payloadType: mainVideoCodec.preferredPayloadType ?? 102,
-                });
+            if (this.videoPublishInProgress) {
+                await this.videoPublishInProgress;
+                if (this.isProducingVideo()) return;
             }
+            const doPublish = async () => {
+                const videoCodecs = this.codecCapabilities?.filter((codec) => codec.kind === "video") ?? [];
+                const mainVideoCodec = videoCodecs.find((codec) => !codec.mimeType.toLowerCase().includes("rtx"));
+                const rtxCodec = videoCodecs.find((codec) => codec.mimeType.toLowerCase().includes("rtx"));
 
-            // Add RTX codec for retransmission
-            if (rtxCodec) {
-                codecs.push({
-                    mimeType: rtxCodec.mimeType,
-                    clockRate: rtxCodec.clockRate,
-                    rtcpFeedback: rtxCodec.rtcpFeedback ?? [],
-                    parameters: rtxCodec.parameters ?? { apt: mainVideoCodec?.preferredPayloadType ?? 102 },
-                    payloadType: rtxCodec.preferredPayloadType ?? 103,
+                const codecs: RtpCodecParameters[] = [];
+
+                if (mainVideoCodec) {
+                    codecs.push({
+                        mimeType: mainVideoCodec.mimeType,
+                        clockRate: mainVideoCodec.clockRate,
+                        channels: mainVideoCodec.channels,
+                        rtcpFeedback: mainVideoCodec.rtcpFeedback,
+                        parameters: mainVideoCodec.parameters ?? {},
+                        payloadType: mainVideoCodec.preferredPayloadType ?? 102,
+                    });
+                }
+
+                if (rtxCodec) {
+                    codecs.push({
+                        mimeType: rtxCodec.mimeType,
+                        clockRate: rtxCodec.clockRate,
+                        rtcpFeedback: rtxCodec.rtcpFeedback ?? [],
+                        parameters: rtxCodec.parameters ?? { apt: mainVideoCodec?.preferredPayloadType ?? 102 },
+                        payloadType: rtxCodec.preferredPayloadType ?? 103,
+                    });
+                }
+
+                this.videoProducer = await this.transport!.produce({
+                    kind: "video",
+                    rtpParameters: {
+                        codecs,
+                        encodings: [
+                            {
+                                ssrc: ssrc.video_ssrc,
+                                rtx: ssrc.rtx_ssrc ? { ssrc: ssrc.rtx_ssrc } : undefined,
+                                maxBitrate: 2500000,
+                                codecPayloadType: mainVideoCodec?.preferredPayloadType ?? 102,
+                            },
+                        ],
+                        headerExtensions: this.headerExtensions
+                            ?.filter(
+                                (header) =>
+                                    header.uri === "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay" ||
+                                    header.uri === "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" ||
+                                    header.uri === "urn:ietf:params:rtp-hdrext:toffset" ||
+                                    header.uri === "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01" ||
+                                    header.uri === "urn:3gpp:video-orientation"
+                            )
+                            .map((header) => {
+                                return {
+                                    id: header.id,
+                                    uri: header.uri as RtpHeaderExtensionUri,
+                                };
+                            }),
+                    },
+                    paused: false,
                 });
-            }
 
-            this.videoProducer = await this.transport.produce({
-                kind: "video",
-                rtpParameters: {
-                    codecs,
-                    encodings: [
-                        {
-                            ssrc: ssrc.video_ssrc,
-                            rtx: ssrc.rtx_ssrc ? { ssrc: ssrc.rtx_ssrc } : undefined,
-                            maxBitrate: 2500000,
-                            codecPayloadType: mainVideoCodec?.preferredPayloadType ?? 102,
-                        },
-                    ],
-                    headerExtensions: this.headerExtensions
-                        ?.filter(
-                            (header) =>
-                                header.uri === "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay" ||
-                                header.uri === "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time" ||
-                                header.uri === "urn:ietf:params:rtp-hdrext:toffset" ||
-                                header.uri === "http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01" ||
-                                header.uri === "urn:3gpp:video-orientation"
-                        )
-                        .map((header) => {
-                            return {
-                                id: header.id,
-                                uri: header.uri as RtpHeaderExtensionUri,
-                            };
-                        }),
-                },
-                paused: false,
-            });
-
-            // Store video SSRCs
-            this.incomingSSRCS = {
-                ...this.incomingSSRCS,
-                video_ssrc: ssrc.video_ssrc,
-                rtx_ssrc: ssrc.rtx_ssrc,
+                this.incomingSSRCS = {
+                    ...this.incomingSSRCS,
+                    video_ssrc: ssrc.video_ssrc,
+                    rtx_ssrc: ssrc.rtx_ssrc,
+                };
             };
+            this.videoPublishInProgress = doPublish().finally(() => {
+                this.videoPublishInProgress = null;
+            });
+            await this.videoPublishInProgress;
         }
     }
 
