@@ -16,10 +16,13 @@
         "access": "public"
     },
     "scripts": {
-        "build": "tsc"
+        "build": "tsc",
+        "clean": "if exist dist (rd /s /q dist) && if exist tsconfig.tsbuildinfo (del tsconfig.tsbuildinfo)"
     },
     "dependencies": {
+        "@types/sdp-transform": "^2.15.0",
         "mediasoup": "^3.18.0",
+        "sdp-transform": "^3.0.0",
         "semantic-sdp": "^3.31.1"
     },
     "devDependencies": {
