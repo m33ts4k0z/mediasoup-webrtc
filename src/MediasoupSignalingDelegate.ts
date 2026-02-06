@@ -301,6 +301,17 @@ export class MediasoupSignalingDelegate implements SignalingDelegate {
                 }
             }
 
+            // Include consumer SSRCs in audio m-line so the receiver expects the SSRC mediasoup will send.
+            if (offerMedia.type === "audio") {
+                const mc = client as MediasoupWebRtcClient;
+                const audioConsumer = mc.consumers?.find((c) => c.kind === "audio");
+                const encoding = audioConsumer?.rtpParameters?.encodings?.[0] as { ssrc?: number } | undefined;
+                if (encoding?.ssrc) {
+                    const cname = "mediasoup-audio-" + (encoding.ssrc >>> 0);
+                    answerMedia.ssrcs = [{ id: encoding.ssrc, attribute: "cname", value: cname }];
+                }
+            }
+
             answerSdp.media!.push(answerMedia);
         }
 

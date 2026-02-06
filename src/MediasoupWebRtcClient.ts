@@ -502,7 +502,35 @@ export class MediasoupWebRtcClient implements WebRtcClient<any> {
 
         // Filter codecs for the specific media type
         let codecs = this.codecCapabilities?.filter((codec) => codec.kind === type) ?? [];
-        
+
+        // Match audio consumer codec to the audio producer's actual codec (ensures PT and parameters align)
+        if (type === "audio") {
+            const producerCodec = producer.rtpParameters.codecs[0];
+            if (producerCodec) {
+                console.log("[mediasoup] Audio producer codec for consumer:", {
+                    mimeType: producerCodec.mimeType,
+                    payloadType: producerCodec.payloadType,
+                    clockRate: producerCodec.clockRate,
+                    channels: producerCodec.channels,
+                    parameters: producerCodec.parameters,
+                });
+                codecs = [{
+                    kind: 'audio' as const,
+                    mimeType: producerCodec.mimeType,
+                    clockRate: producerCodec.clockRate,
+                    channels: producerCodec.channels,
+                    preferredPayloadType: producerCodec.payloadType,
+                    parameters: producerCodec.parameters ?? {},
+                    rtcpFeedback: codecs[0]?.rtcpFeedback ?? [],
+                }];
+                console.log("[mediasoup] Audio consumer rtpCapabilities codecs:", codecs.map(c => ({
+                    mimeType: c.mimeType,
+                    pt: c.preferredPayloadType,
+                    channels: c.channels,
+                })));
+            }
+        }
+
         if (type === "video") {
             // Get the producer's main (non-RTX) codec
             const producerCodec = producer.rtpParameters.codecs.find(
@@ -649,6 +677,50 @@ export class MediasoupWebRtcClient implements WebRtcClient<any> {
                 }, 800);
             }
         } else {
+            // Audio consumer logging (mirrors video consumer logging above)
+            const encoding = consumer.rtpParameters.encodings?.[0];
+            const consumerCodecs = consumer.rtpParameters.codecs ?? [];
+            const consumerHeaderExts = consumer.rtpParameters.headerExtensions?.map(h => h.uri) ?? [];
+            console.log("[mediasoup] audio consumer created for", this.user_id,
+                "from producer", client.user_id,
+                "consumerId", consumer.id,
+                "paused:", consumer.paused,
+                "producerPaused:", consumer.producerPaused,
+                "ssrc:", encoding?.ssrc,
+                "codecs:", consumerCodecs.map(c => c.mimeType + ":" + c.payloadType).join(", "),
+                "headerExts:", consumerHeaderExts
+            );
+
+            // Monitor audio consumer stats after a short delay
+            const audioConsumerId = consumer.id;
+            setTimeout(async () => {
+                if (consumer.closed) return;
+                try {
+                    const stats = await consumer.getStats();
+                    const stat = stats.length > 0 ? {
+                        byteCount: stats[0].byteCount,
+                        packetCount: stats[0].packetCount,
+                        score: stats[0].score,
+                        type: stats[0].type,
+                    } : null;
+                    console.log("[mediasoup] audio consumer stats @500ms (viewer", this.user_id, "from", client.user_id, "):", stat ?? "no stats");
+                } catch (e) { /* ignore */ }
+            }, 500);
+
+            setTimeout(async () => {
+                if (consumer.closed) return;
+                try {
+                    const stats = await consumer.getStats();
+                    const stat = stats.length > 0 ? {
+                        byteCount: stats[0].byteCount,
+                        packetCount: stats[0].packetCount,
+                        score: stats[0].score,
+                        type: stats[0].type,
+                    } : null;
+                    console.log("[mediasoup] audio consumer stats @2000ms (viewer", this.user_id, "from", client.user_id, "):", stat ?? "no stats");
+                } catch (e) { /* ignore */ }
+            }, 2000);
+
             this.consumers?.push(consumer);
         }
     }
